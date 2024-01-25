@@ -1,10 +1,16 @@
+#!/usr/bin/env python3
+"""
+Automatically generated transcripts for a video file or a directory of video files
+using faster-whisper.
+"""
 import argparse
-import subprocess
-from faster_whisper import WhisperModel
 from pathlib import Path
 import time
 import sys
+import re
 from typing import List
+import subprocess
+from faster_whisper import WhisperModel
 
 model: WhisperModel | None = None
 
@@ -14,29 +20,54 @@ def extract_audio(video_path: str, audio_path: str):
     subprocess.call(command, shell=True)
 
 
+def _remove_ums(text: str) -> str:
+    words = re.split(r"\b", text)
+    for i, word in enumerate(words):
+        if word.lower() in ["um", "uh"]:
+            comma_before = i > 0 and words[i - 1] in [", ", ","]
+            comma_after = i < len(words) - 1 and words[i + 1] in [", ", ","]
+            words[i] = " " if comma_before and comma_after else ""
+            if comma_before:
+                words[i - 1] = ""
+            if comma_after:
+                words[i + 1] = ""
+                if i < len(words) - 2 and word in ["Um", "Uh"]:
+                    words[i + 2] = words[i + 2].capitalize()
+    return "".join(words)
+
+
 def transcribe_audio(
     audio_path: Path,
     output_path: Path,
-    language: str = "de",
+    language: str = "en",
     device: str = "cuda",
-    initial_prompt: str = "Herzlich willkommen zur Vorlesung! Legen wir los.",
+    initial_prompt: str | None = None,
+    remove_ums: bool = True,
 ):
     global model
     if model is None:
         print("Loading model...")
         model = WhisperModel("medium", device=device)
 
+    default_prompts = {
+        "de": "Herzlich willkommen zur Vorlesung! Legen wir los.",
+        "en": "Welcome back to the lecture. Let's get started.",
+    }
+
     print("Opening audio file...")
     segments, _ = model.transcribe(
         str(audio_path),
         language=language,
-        initial_prompt=initial_prompt,
+        initial_prompt=initial_prompt or default_prompts.get(language, ""),
     )
 
     print("Transcribing...")
     with open(output_path, "w", encoding="utf-8") as f:
         for segment in segments:
-            line = f"[{segment.start:.2f}s -> {segment.end:.2f}s] {segment.text}"
+            text = segment.text
+            if remove_ums:
+                text = _remove_ums(text)
+            line = f"[{segment.start:.2f}s -> {segment.end:.2f}s] {text}"
             print(line)
             f.write(f"{line}\n")
 
@@ -65,8 +96,8 @@ def main():
     parser.add_argument(
         "--language",
         type=str,
-        default="de",
-        help="Language of the audio files. Defaults to 'de'.",
+        default="en",
+        help="Language of the audio files. Defaults to 'en'.",
     )
     parser.add_argument(
         "--device",
@@ -77,13 +108,18 @@ def main():
     parser.add_argument(
         "--initial_prompt",
         type=str,
-        default="Herzlich willkommen zur Vorlesung! Legen wir los.",
-        help="Initial prompt for the model. Defaults to 'Herzlich willkommen zur Vorlesung! Legen wir los.'.",
+        default=None,
+        help="Initial prompt for the model. Default is chosen based on language.",
     )
     parser.add_argument(
         "--regenerate",
         action="store_true",
         help="Regenerate even existing audio or transcription files. The default behavior is to skip generation if the files already exist.",
+    )
+    parser.add_argument(
+        "--keep-ums",
+        action="store_true",
+        help="Do not automatically remove 'um' and 'uh' from the transcript.",
     )
     args = parser.parse_args()
 
@@ -139,6 +175,7 @@ def main():
                 language=args.language,
                 device=args.device,
                 initial_prompt=args.initial_prompt,
+                remove_ums=not args.keep_ums,
             )
             elapsed = time.time() - start
             print(f"Transcription took {elapsed} seconds.")

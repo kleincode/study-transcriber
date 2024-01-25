@@ -1,3 +1,7 @@
+#!/usr/bin/env python3
+"""
+Performs semantic search on a folder of PDF and TXT files.
+"""
 from argparse import ArgumentParser
 from typing import List
 from pathlib import Path
@@ -5,14 +9,13 @@ import os
 from io import BytesIO
 from itertools import chain
 from langchain.docstore.document import Document
-from langchain.embeddings import HuggingFaceBgeEmbeddings
 from langchain.vectorstores.chroma import Chroma
 from langchain.retrievers import ParentDocumentRetriever
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.storage import InMemoryStore
-from langchain.document_loaders import PyPDFLoader
+from langchain_community.embeddings import HuggingFaceBgeEmbeddings
+from langchain_community.document_loaders import PyPDFLoader
 from pypdf import PdfMerger
-from pypdf.pagerange import PageRange
 import textwrap
 from fpdf import FPDF
 
