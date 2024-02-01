@@ -17,6 +17,8 @@ from langchain_community.embeddings import HuggingFaceBgeEmbeddings
 from langchain_community.document_loaders import PyPDFLoader
 from pypdf import PdfMerger
 import textwrap
+import subprocess
+import sys
 from fpdf import FPDF
 
 
@@ -60,24 +62,27 @@ class SemanticSearcher:
                     Document(page_content=content, metadata=page.metadata)
                 )
 
-        print(f"Adding {len(preprocessed_pages)} meaningful pages to the index...")
+        print(
+            f"Adding {len(preprocessed_pages)} meaningful pages to the index...")
         self.full_doc_retriever.add_documents(preprocessed_pages, ids=None)
 
     def _index_txt(self, file_path: Path) -> None:
         def remove_timestamps(line: str):
             end_of_timestamp = line.find("] ")
             if end_of_timestamp != -1:
-                line = line[end_of_timestamp + 1 :]
+                line = line[end_of_timestamp + 1:]
             return line.strip()
 
         with open(file_path, "r", encoding="utf-8") as f:
-            content = " ".join([remove_timestamps(line) for line in f.readlines()])
+            content = " ".join([remove_timestamps(line)
+                               for line in f.readlines()])
 
         print("Adding 1 meaningful page to the index...")
         self.full_doc_retriever.add_documents(
             [
                 Document(
-                    page_content=content, metadata={"source": str(file_path), "page": 0}
+                    page_content=content, metadata={
+                        "source": str(file_path), "page": 0}
                 )
             ],
             ids=None,
@@ -111,7 +116,9 @@ class PDFCreator:
     def write(self, output_path: Path, open_file: bool = False) -> None:
         self.merger.write(output_path)
         if open_file:
-            os.startfile(output_path)
+            opener = "open" if sys.platform == "darwin" else "xdg-open"
+            subprocess.call([opener, output_path])
+            # os.startfile()
 
     def _text_to_pdf(self, text: str) -> bytearray:
         a4_width_mm = 210
