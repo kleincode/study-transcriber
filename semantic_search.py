@@ -20,6 +20,7 @@ import textwrap
 import subprocess
 import sys
 from fpdf import FPDF
+from page_highlighter import PageHighlighter
 
 
 class SemanticSearcher:
@@ -111,17 +112,24 @@ class SemanticSearcher:
 
 class PDFCreator:
     def __init__(
-        self, results: List[Document], txt_write_full_file: bool = False
+        self,
+        results: List[Document],
+        query: str,
+        txt_write_full_file: bool = False,
+        language: str = "english",
     ) -> None:
         self.writer = PdfWriter()
-        self.readers: Dict[str, PdfReader] = {}
+        readers: Dict[str, PdfReader] = {}
+        highlighter = PageHighlighter(self.writer, query, language=language)
         for result in results:
             page = int(result.metadata["page"])
             source_file = result.metadata["source"]
             if source_file.endswith(".pdf"):
-                if source_file not in self.readers:
-                    self.readers[source_file] = PdfReader(source_file)
-                self.writer.add_page(self.readers[source_file].pages[page])
+                if source_file not in readers:
+                    readers[source_file] = PdfReader(source_file)
+                self.writer.add_page(readers[source_file].pages[page])
+                highlighter.highlight()
+
             elif source_file.endswith(".txt"):
                 text = (
                     "\n".join(
@@ -182,7 +190,15 @@ def main():
         "input_folder", type=str, help="Input folder with pdf files to search"
     )
     parser.add_argument("--types", nargs="+", default=["pdf", "txt"])
+    parser.add_argument("--print", action="store_true", help="Print the results")
+    parser.add_argument("--language", type=str, default="english")
     args = parser.parse_args()
+
+    print("=== SEMANTIC SEARCH ===")
+    print("Launching with the following settings:")
+    print(" - Filetypes (--types pdf txt):", args.types)
+    print(" - Print results (--print):", args.print)
+    print(" - Language (--lang english, --lang german, etc.):", args.language)
 
     searcher = SemanticSearcher()
     input_folder = Path(args.input_folder)
@@ -195,32 +211,33 @@ def main():
             query = input("Query > ").strip()
             if query.startswith('"""'):
                 query = query[3:]
-                while True:
+                while not query.endswith('"""'):
                     query += "\n" + input("... ").strip()
-                    if query.endswith('"""'):
-                        query = query[:-3]
-                        break
+                query = query[:-3]
             if len(query.strip()) == 0:
                 continue
             if query.lower() == "exit":
                 break
             results = searcher.search(query)
-            print(f"Found {len(results)} results:")
-            for i, result in enumerate(results, start=1):
-                print("#" * 64)
-                print(f"# RESULT {i:02d}")
-                print(
-                    f"# Source: {Path(result.metadata['source']).relative_to(input_folder)}, page {result.metadata['page']}"
-                )
-                print("#" * 64)
-                print()
-                print(result.page_content)
-                print()
+            print(f"Found {len(results)} results.")
+            if args.print:
+                for i, result in enumerate(results, start=1):
+                    print("#" * 64)
+                    print(f"# RESULT {i:02d}")
+                    print(
+                        f"# Source: {Path(result.metadata['source']).relative_to(input_folder)}, page {result.metadata['page']}"
+                    )
+                    print("#" * 64)
+                    print()
+                    print(result.page_content)
+                    print()
             print()
-            PDFCreator(results).write(Path("results.pdf"), open_file=True)
+            PDFCreator(results, query, language=args.language or "english").write(
+                Path("results.pdf"), open_file=True
+            )
         except KeyboardInterrupt:
             print()
-            if input("Do you really want to exit? (y/n)").lower().strip() == "y":
+            if input("Do you really want to exit? (y/n): ").lower().strip() == "y":
                 break
         except Exception as e:
             print("An error occurred:", e)

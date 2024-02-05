@@ -1,0 +1,7 @@
+faster_whisper==0.10.0
+fpdf==1.7.2
+langchain==0.1.5
+langchain_community==0.0.17
+nltk==3.8.1
+pypdf==4.0.1
+pycryptodome==3.20.0
