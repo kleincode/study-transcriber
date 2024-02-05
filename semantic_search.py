@@ -48,6 +48,10 @@ class SemanticSearcher:
             self._index_pdf(file_path)
         elif file_path.suffix == ".txt":
             self._index_txt(file_path)
+    
+    def _split_list(self, input_list, chunk_size):
+        for i in range(0, len(input_list), chunk_size):
+            yield input_list[i:i + chunk_size]
 
     def _index_pdf(self, file_path: Path) -> None:
         loader = PyPDFLoader(str(file_path), extract_images=False)
@@ -64,7 +68,9 @@ class SemanticSearcher:
 
         print(
             f"Adding {len(preprocessed_pages)} meaningful pages to the index...")
-        self.full_doc_retriever.add_documents(preprocessed_pages, ids=None)
+        split_pages = self._split_list(preprocessed_pages, 100)
+        for chunk in split_pages:
+            self.full_doc_retriever.add_documents(chunk, ids=None)
 
     def _index_txt(self, file_path: Path) -> None:
         def remove_timestamps(line: str):
@@ -116,9 +122,10 @@ class PDFCreator:
     def write(self, output_path: Path, open_file: bool = False) -> None:
         self.merger.write(output_path)
         if open_file:
-            opener = "open" if sys.platform == "darwin" else "xdg-open"
-            subprocess.call([opener, output_path])
-            # os.startfile()
+            if sys.platform == "darwin":
+                subprocess.call(["open", output_path])
+            else:
+                os.startfile(output_path)
 
     def _text_to_pdf(self, text: str) -> bytearray:
         a4_width_mm = 210
@@ -162,23 +169,32 @@ def main():
         searcher.index(file_path)
 
     while True:
-        query = input("Query > ").strip()
-        if len(query) == 0 or query.lower() == "exit":
-            break
-        results = searcher.search(query)
-        print(f"Found {len(results)} results:")
-        for i, result in enumerate(results, start=1):
-            print("#" * 64)
-            print(f"# RESULT {i:02d}")
-            print(
-                f"# Source: {Path(result.metadata['source']).relative_to(input_folder)}, page {result.metadata['page']}"
-            )
-            print("#" * 64)
+        try:
+            query = input("Query > ").strip()
+            if len(query) == 0:            
+                continue
+            if query.lower() == "exit":
+                break
+            results = searcher.search(query)
+            print(f"Found {len(results)} results:")
+            for i, result in enumerate(results, start=1):
+                print("#" * 64)
+                print(f"# RESULT {i:02d}")
+                print(
+                    f"# Source: {Path(result.metadata['source']).relative_to(input_folder)}, page {result.metadata['page']}"
+                )
+                print("#" * 64)
+                print()
+                print(result.page_content)
+                print()
             print()
-            print(result.page_content)
+            PDFCreator(results).write(Path("results.pdf"), open_file=True)
+        except KeyboardInterrupt:
             print()
-        print()
-        PDFCreator(results).write(Path("results.pdf"), open_file=True)
+            if input("Do you really want to exit? (y/n)").lower().strip() == "y":
+                break
+        except Exception as e:
+            print("An error occurred:", e)
 
     print("Bye!")
 
