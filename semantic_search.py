@@ -17,6 +17,8 @@ from langchain_community.embeddings import HuggingFaceBgeEmbeddings
 from langchain_community.document_loaders import PyPDFLoader
 from pypdf import PdfMerger
 import textwrap
+import subprocess
+import sys
 from fpdf import FPDF
 
 
@@ -54,6 +56,15 @@ class SemanticSearcher:
         loader = PyPDFLoader(str(file_path), extract_images=False)
         pages = loader.load_and_split()
         preprocessed_pages = []
+        page_count = 0
+
+        def perform_add():
+            nonlocal preprocessed_pages, page_count
+            self.full_doc_retriever.add_documents(preprocessed_pages, ids=None)
+            page_count += len(preprocessed_pages)
+            preprocessed_pages.clear()
+            print(f"Added {page_count} meaningful pages to the index...")
+
         for page in pages:
             content = page.page_content.replace("PFIWiSe21/22 TEIL I I", "").replace(
                 "PSYCHOLOGIE FÜR INGENIEURINNEN  UND INGENIEURE (TEIL I I)", ""
@@ -62,9 +73,10 @@ class SemanticSearcher:
                 preprocessed_pages.append(
                     Document(page_content=content, metadata=page.metadata)
                 )
-
-        print(f"Adding {len(preprocessed_pages)} meaningful pages to the index...")
-        self.full_doc_retriever.add_documents(preprocessed_pages, ids=None)
+            if len(preprocessed_pages) >= 100:
+                perform_add()
+        perform_add()
+        print(f"Added all {page_count} relevant pages of {file_path}.")
 
     def _index_txt(self, file_path: Path) -> None:
         def remove_timestamps(line: str):
@@ -128,7 +140,10 @@ class PDFCreator:
     def write(self, output_path: Path, open_file: bool = False) -> None:
         self.merger.write(output_path)
         if open_file:
-            os.startfile(output_path)
+            if sys.platform == "darwin":
+                subprocess.call(["open", output_path])
+            else:
+                os.startfile(output_path)
 
     def _text_to_pdf(self, text: str) -> bytearray:
         a4_width_mm = 210
@@ -172,23 +187,32 @@ def main():
         searcher.index(file_path)
 
     while True:
-        query = input("Query > ").strip()
-        if len(query) == 0 or query.lower() == "exit":
-            break
-        results = searcher.search(query)
-        print(f"Found {len(results)} results:")
-        for i, result in enumerate(results, start=1):
-            print("#" * 64)
-            print(f"# RESULT {i:02d}")
-            print(
-                f"# Source: {Path(result.metadata['source']).relative_to(input_folder)}, page {result.metadata['page']}"
-            )
-            print("#" * 64)
+        try:
+            query = input("Query > ").strip()
+            if len(query) == 0:
+                continue
+            if query.lower() == "exit":
+                break
+            results = searcher.search(query)
+            print(f"Found {len(results)} results:")
+            for i, result in enumerate(results, start=1):
+                print("#" * 64)
+                print(f"# RESULT {i:02d}")
+                print(
+                    f"# Source: {Path(result.metadata['source']).relative_to(input_folder)}, page {result.metadata['page']}"
+                )
+                print("#" * 64)
+                print()
+                print(result.page_content)
+                print()
             print()
-            print(result.page_content)
+            PDFCreator(results).write(Path("results.pdf"), open_file=True)
+        except KeyboardInterrupt:
             print()
-        print()
-        PDFCreator(results).write(Path("results.pdf"), open_file=True)
+            if input("Do you really want to exit? (y/n)").lower().strip() == "y":
+                break
+        except Exception as e:
+            print("An error occurred:", e)
 
     print("Bye!")
 
