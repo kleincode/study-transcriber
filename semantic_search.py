@@ -3,7 +3,7 @@
 Performs semantic search on a folder of PDF and TXT files.
 """
 from argparse import ArgumentParser
-from typing import List
+from typing import List, Dict
 from pathlib import Path
 import os
 from io import BytesIO
@@ -15,7 +15,7 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.storage import InMemoryStore
 from langchain_community.embeddings import HuggingFaceBgeEmbeddings
 from langchain_community.document_loaders import PyPDFLoader
-from pypdf import PdfMerger
+from pypdf import PdfWriter, PdfReader
 import textwrap
 import subprocess
 import sys
@@ -113,12 +113,15 @@ class PDFCreator:
     def __init__(
         self, results: List[Document], txt_write_full_file: bool = False
     ) -> None:
-        self.merger = PdfMerger()
+        self.writer = PdfWriter()
+        self.readers: Dict[str, PdfReader] = {}
         for result in results:
             page = int(result.metadata["page"])
             source_file = result.metadata["source"]
             if source_file.endswith(".pdf"):
-                self.merger.append(source_file, pages=(page, page + 1))
+                if source_file not in self.readers:
+                    self.readers[source_file] = PdfReader(source_file)
+                self.writer.add_page(self.readers[source_file].pages[page])
             elif source_file.endswith(".txt"):
                 text = (
                     "\n".join(
@@ -133,12 +136,13 @@ class PDFCreator:
                 else:
                     text += result.page_content
                 pdf_bytes = self._text_to_pdf(text)
-                self.merger.append(BytesIO(pdf_bytes))
+                reader = PdfReader(BytesIO(pdf_bytes))
+                self.writer.append_pages_from_reader(reader)
             else:
                 print("Unsupported file type:", source_file)
 
     def write(self, output_path: Path, open_file: bool = False) -> None:
-        self.merger.write(output_path)
+        self.writer.write(output_path)
         if open_file:
             if sys.platform == "darwin":
                 subprocess.call(["open", output_path])
