@@ -193,7 +193,14 @@ def main():
     while True:
         try:
             query = input("Query > ").strip()
-            if len(query) == 0:
+            if query.startswith('"""'):
+                query = query[3:]
+                while True:
+                    query += "\n" + input("... ").strip()
+                    if query.endswith('"""'):
+                        query = query[:-3]
+                        break
+            if len(query.strip()) == 0:
                 continue
             if query.lower() == "exit":
                 break
