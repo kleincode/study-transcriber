@@ -36,6 +36,9 @@ class SemanticSearcher:
             vectorstore=self.store,
             docstore=self.doc_store,
             child_splitter=RecursiveCharacterTextSplitter(chunk_size=400),
+            parent_splitter=RecursiveCharacterTextSplitter(
+                chunk_size=2000, add_start_index=True
+            ),
             search_kwargs={"k": 10},
         )
         print("Done!")
@@ -72,6 +75,7 @@ class SemanticSearcher:
 
         with open(file_path, "r", encoding="utf-8") as f:
             content = " ".join([remove_timestamps(line) for line in f.readlines()])
+        content = content.replace(". ", ".\n")
 
         print("Adding 1 meaningful page to the index...")
         self.full_doc_retriever.add_documents(
@@ -94,7 +98,9 @@ class SemanticSearcher:
 
 
 class PDFCreator:
-    def __init__(self, results: List[Document]) -> None:
+    def __init__(
+        self, results: List[Document], txt_write_full_file: bool = False
+    ) -> None:
         self.merger = PdfMerger()
         for result in results:
             page = int(result.metadata["page"])
@@ -102,9 +108,20 @@ class PDFCreator:
             if source_file.endswith(".pdf"):
                 self.merger.append(source_file, pages=(page, page + 1))
             elif source_file.endswith(".txt"):
-                with open(source_file, "r", encoding="utf-8") as f:
-                    pdf_bytes = self._text_to_pdf(f.read())
-                    self.merger.append(BytesIO(pdf_bytes))
+                text = (
+                    "\n".join(
+                        f"{key.capitalize()}: {val}"
+                        for key, val in result.metadata.items()
+                    )
+                    + "\n\n"
+                )
+                if txt_write_full_file:
+                    with open(source_file, "r", encoding="utf-8") as f:
+                        text += f.read()
+                else:
+                    text += result.page_content
+                pdf_bytes = self._text_to_pdf(text)
+                self.merger.append(BytesIO(pdf_bytes))
             else:
                 print("Unsupported file type:", source_file)
 

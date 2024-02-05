@@ -4,3 +4,4 @@ experiments
 *.ipynb
 *.pdf
 .env
+__pycache__
